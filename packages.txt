@@ -1,0 +1,10 @@
+streamlit
+transformers>=4.30.0
+torch>=2.0.0
+pillow
+opencv-python-headless
+requests
+numpy
+accelerate
+libgl1-mesa-glx
+libglib2.0-0

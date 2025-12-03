@@ -1,21 +1,32 @@
 import streamlit as st
 from PIL import Image
-from transformers import LlavaNextVideoProcessor, LlavaNextVideoForConditionalGeneration
 import torch
-import cv2
 import numpy as np
 from pathlib import Path
 import tempfile
 import time
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional
 import requests
 from io import BytesIO
 from dataclasses import dataclass
 import json
-import os
-from dotenv import load_dotenv
 
-load_dotenv()
+# Safe imports with error handling
+try:
+    from transformers import LlavaNextVideoProcessor, LlavaNextVideoForConditionalGeneration
+
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    st.error("⚠️ transformers kutubxonasi o'rnatilmagan!")
+
+try:
+    import cv2
+
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    st.warning("⚠️ opencv-python o'rnatilmagan. Video tahlili ishlamaydi!")
 
 
 @dataclass
@@ -50,22 +61,25 @@ class LLaVAVideoAnalyzer:
         try:
             self.google_api_key = st.secrets.get("GOOGLE_API_KEY", "")
             self.google_cx = st.secrets.get("GOOGLE_CX", "")
-        except:
+        except Exception:
             pass
 
-    @st.cache_resource
-    def load_model(_self):
+    def load_model(self):
         """Modelni yuklash (cache qilingan)"""
+        if not TRANSFORMERS_AVAILABLE:
+            st.error("❌ transformers kutubxonasi o'rnatilmagan!")
+            return False
+
         try:
             with st.spinner("🤖 Model yuklanmoqda... (Bu 5-10 daqiqa olishi mumkin)"):
-                _self.processor = LlavaNextVideoProcessor.from_pretrained(
+                self.processor = LlavaNextVideoProcessor.from_pretrained(
                     "llava-hf/LLaVA-NeXT-Video-7B-hf"
                 )
 
-                _self.model = LlavaNextVideoForConditionalGeneration.from_pretrained(
+                self.model = LlavaNextVideoForConditionalGeneration.from_pretrained(
                     "llava-hf/LLaVA-NeXT-Video-7B-hf",
                     torch_dtype=torch.float16,
-                    device_map=_self.device,
+                    device_map=self.device,
                     low_cpu_mem_usage=True
                 )
 
@@ -149,7 +163,7 @@ NOT just "a car"."""
             with torch.no_grad():
                 output = self.model.generate(
                     **inputs,
-                    max_new_tokens=500,  # Ko'proq detallar uchun
+                    max_new_tokens=500,
                     temperature=0.7,
                     top_p=0.9,
                     do_sample=True
@@ -200,6 +214,17 @@ NOT just "a car"."""
         """
         Videoni tahlil qilish
         """
+        if not CV2_AVAILABLE:
+            return AnalysisResult(
+                success=False,
+                description="",
+                objects_detected=[],
+                details={},
+                confidence=0.0,
+                time_taken=0.0,
+                error="opencv-python o'rnatilmagan! Video tahlili mumkin emas."
+            )
+
         start_time = time.time()
 
         if self.model is None:
@@ -312,6 +337,9 @@ Be specific with identifications!"""
             num_frames: int
     ) -> Optional[List[Image.Image]]:
         """Video'dan framelar ajratib olish"""
+        if not CV2_AVAILABLE:
+            return None
+
         try:
             cap = cv2.VideoCapture(video_path)
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -563,6 +591,12 @@ def main():
             memory = torch.cuda.get_device_properties(0).total_memory / 1e9
             st.metric("VRAM", f"{memory:.1f} GB")
 
+        # Dependencies holati
+        st.markdown("---")
+        st.subheader("📦 Dependencies")
+        st.metric("Transformers", "✅" if TRANSFORMERS_AVAILABLE else "❌")
+        st.metric("OpenCV", "✅" if CV2_AVAILABLE else "❌")
+
     # Main tabs
     tab1, tab2, tab3 = st.tabs([
         "📸 Rasm Tahlili",
@@ -665,47 +699,52 @@ def main():
     with tab2:
         st.header("🎥 Video Tahlili")
 
-        st.info("🎬 Video tahlili uchun video fayl yuklang (MP4, AVI, MOV)")
+        if not CV2_AVAILABLE:
+            st.error("❌ opencv-python o'rnatilmagan! Video tahlili ishlamaydi.")
+            st.info(
+                "Streamlit Cloud uchun `packages.txt` faylida quyidagilarni qo'shing:\n```\nlibgl1-mesa-glx\nlibglib2.0-0\n```")
+        else:
+            st.info("🎬 Video tahlili uchun video fayl yuklang (MP4, AVI, MOV)")
 
-        video_file = st.file_uploader(
-            "Video tanlang",
-            type=['mp4', 'avi', 'mov', 'mkv']
-        )
+            video_file = st.file_uploader(
+                "Video tanlang",
+                type=['mp4', 'avi', 'mov', 'mkv']
+            )
 
-        if video_file:
-            # Temporary faylga saqlash
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
-                tmp_file.write(video_file.read())
-                video_path = tmp_file.name
+            if video_file:
+                # Temporary faylga saqlash
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
+                    tmp_file.write(video_file.read())
+                    video_path = tmp_file.name
 
-            col1, col2 = st.columns([1, 1.2])
+                col1, col2 = st.columns([1, 1.2])
 
-            with col1:
-                st.video(video_path)
+                with col1:
+                    st.video(video_path)
 
-                num_frames = st.slider("Frame soni", 4, 16, 8)
+                    num_frames = st.slider("Frame soni", 4, 16, 8)
 
-            with col2:
-                if st.button("🎬 Videoni Tahlil Qilish", type="primary", use_container_width=True):
-                    with st.spinner(f"Video tahlil qilinmoqda ({num_frames} frame)..."):
-                        result = analyzer.analyze_video(video_path, num_frames)
+                with col2:
+                    if st.button("🎬 Videoni Tahlil Qilish", type="primary", use_container_width=True):
+                        with st.spinner(f"Video tahlil qilinmoqda ({num_frames} frame)..."):
+                            result = analyzer.analyze_video(video_path, num_frames)
 
-                    if result.success:
-                        st.success(f"✅ Tayyor! ({result.time_taken:.1f}s)")
+                        if result.success:
+                            st.success(f"✅ Tayyor! ({result.time_taken:.1f}s)")
 
-                        st.markdown('<div class="result-container">', unsafe_allow_html=True)
-                        st.markdown("### 🎬 Video Tahlili")
-                        st.write(result.description)
+                            st.markdown('<div class="result-container">', unsafe_allow_html=True)
+                            st.markdown("### 🎬 Video Tahlili")
+                            st.write(result.description)
 
-                        if result.objects_detected:
-                            st.markdown("---")
-                            st.markdown("**🎯 Videoda Topilganlar:**")
-                            for obj in result.objects_detected[:5]:
-                                st.info(obj)
+                            if result.objects_detected:
+                                st.markdown("---")
+                                st.markdown("**🎯 Videoda Topilganlar:**")
+                                for obj in result.objects_detected[:5]:
+                                    st.info(obj)
 
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    else:
-                        st.error(f"❌ {result.error}")
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        else:
+                            st.error(f"❌ {result.error}")
 
     with tab3:
         st.header("📚 To'liq Yo'riqnoma")
@@ -714,15 +753,31 @@ def main():
         ## 🚀 O'rnatish
 
         ### 1️⃣ Dependencies
-        ```bash
-        pip install streamlit transformers torch pillow opencv-python requests
-        pip install accelerate bitsandbytes  # GPU uchun
+
+        **packages.txt:**
+        ```
+        streamlit
+        transformers
+        torch
+        pillow
+        opencv-python-headless
+        requests
+        numpy
+        accelerate
         ```
 
-        ### 2️⃣ Model Yuklanishi
+        ### 2️⃣ Streamlit Cloud uchun
+
+        **packages.txt:**
+        ```
+        libgl1-mesa-glx
+        libglib2.0-0
+        ```
+
+        ### 3️⃣ Model Yuklanishi
         Birinchi ishga tushirishda ~14GB model yuklanadi (bir marta).
 
-        ### 3️⃣ Hardware Talablar
+        ### 4️⃣ Hardware Talablar
 
         | Komponent | Minimum | Tavsiya |
         |-----------|---------|---------|
@@ -777,6 +832,10 @@ def main():
         ---
 
         ## ⚠️ Muammolar
+
+        **ImportError: cv2**
+        - `opencv-python-headless` o'rnating (Streamlit Cloud uchun)
+        - `packages.txt` faylida `libgl1-mesa-glx` qo'shing
 
         **CUDA xatosi:**
         ```bash
