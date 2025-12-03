@@ -702,7 +702,7 @@ def main():
         if not CV2_AVAILABLE:
             st.error("❌ opencv-python o'rnatilmagan! Video tahlili ishlamaydi.")
             st.info(
-                "Streamlit Cloud uchun `packages.txt` faylida quyidagilarni qo'shing:\n```\nlibgl1-mesa-glx\nlibglib2.0-0\n```")
+                "Streamlit Cloud uchun `requirements.txt` faylida quyidagilarni qo'shing:\n```\nlibgl1-mesa-glx\nlibglib2.0-0\n```")
         else:
             st.info("🎬 Video tahlili uchun video fayl yuklang (MP4, AVI, MOV)")
 
@@ -754,7 +754,7 @@ def main():
 
         ### 1️⃣ Dependencies
 
-        **packages.txt:**
+        **requirements.txt:**
         ```
         streamlit
         transformers
@@ -768,7 +768,7 @@ def main():
 
         ### 2️⃣ Streamlit Cloud uchun
 
-        **packages.txt:**
+        **requirements.txt:**
         ```
         libgl1-mesa-glx
         libglib2.0-0
@@ -835,7 +835,7 @@ def main():
 
         **ImportError: cv2**
         - `opencv-python-headless` o'rnating (Streamlit Cloud uchun)
-        - `packages.txt` faylida `libgl1-mesa-glx` qo'shing
+        - `requirements.txt` faylida `libgl1-mesa-glx` qo'shing
 
         **CUDA xatosi:**
         ```bash
